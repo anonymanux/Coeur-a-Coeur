@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "bio": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "A game session between two users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "4-digit session ID" },
+        "creatorId": { "type": "string" },
+        "joinerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "ongoing", "completed"] },
+        "config": {
+          "type": "object",
+          "properties": {
+            "questionCount": { "type": "integer" },
+            "topics": { "type": "array", "items": { "type": "string" } },
+            "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] }
+          }
+        },
+        "currentQuestionIndex": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "creatorId", "status", "createdAt"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "A quiz question within a session",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "correctAnswer": { "type": "integer" },
+        "category": { "type": "string" }
+      },
+      "required": ["text", "options", "correctAnswer"]
+    },
+    "Answer": {
+      "title": "Answer",
+      "description": "A user's answer to a question",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "questionIndex": { "type": "integer" },
+        "answerIndex": { "type": "integer" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "questionIndex", "answerIndex", "timestamp"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A chat message in a session",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Game sessions"
+    },
+    "/sessions/{sessionId}/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Questions for a session"
+    },
+    "/sessions/{sessionId}/answers/{answerId}": {
+      "schema": "Answer",
+      "description": "Answers submitted by users"
+    },
+    "/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Chat messages within a session"
+    }
+  }
+}
