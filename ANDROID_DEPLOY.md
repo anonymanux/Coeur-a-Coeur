@@ -12,6 +12,7 @@ Ce guide explique étape par étape comment packager l'application **Cœur à C�
 5. [Étape 4 : Configuration dans la console Firebase (Crucial pour Google Auth)](#étape-5--configuration-dans-la-console-firebase-crucial-pour-google-auth)
 6. [Étape 5 : Intégration Native de Google Auth (Capacitor)](#étape-6--intégration-native-de-google-auth-capacitor)
 7. [Étape 6 : Compiler et Développer en local](#étape-7--compiler-et-développer-en-local)
+8. [Étape 7 : Configuration des Liens Profonds (App Links - love.horarium.net)](#étape-8--configuration-des-liens-profonds-app-links---lovehorariumnet)
 
 ---
 
@@ -217,3 +218,108 @@ Une fois Android Studio ouvert :
 1.  Connecte ton téléphone Android physique en mode **Débogage USB** ou démarre un émulateur.
 2.  Clique sur le bouton vert **Run app** (ou `Ctrl+R`) en haut de l'interface Android Studio.
 3.  Tu pourras voir tes logs JavaScript mobiles en direct dans la console de l'inspecteur Chrome en ouvrant `chrome://inspect` sur ton ordinateur de bureau, puis en cliquant sur "Inspect" sous la session active de ton téléphone.
+
+---
+
+## Étape 7 : Configuration des Liens Profonds (App Links - `love.horarium.net`)
+
+Pour que les utilisateurs qui cliquent sur une invitation comme `https://love.horarium.net/?join=1234` soient redirigés **directement dans l'application native Android** (sans passer par le navigateur mobile) et que l'application charge automatiquement la session en question, vous devez configurer les **App Links Android (Verified App Links)**.
+
+### A. Déclaration de l'Intent Filter dans l'application native (XML)
+
+Vous devez indiquer au système Android que votre application est capable d'intercepter les liens web pointant vers `love.horarium.net`.
+
+1. Ouvre le fichier situé à : `android/app/src/main/AndroidManifest.xml`
+2. Cherche la balise principale `<activity>` (qui contient l'activité de lancement principal, généralement celle ayant la classe `.MainActivity`).
+3. Ajoute le bloc `<intent-filter>` suivant à l'intérieur de cette balise `<activity>` :
+
+```xml
+<!-- Intercepter l'URL Web love.horarium.net pour rediriger directement dans l'app -->
+<intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    
+    <!-- Définir le protocole d'interception (exclusivement HTTPS sécurisé) -->
+    <data android:scheme="https" android:host="love.horarium.net" />
+</intent-filter>
+
+<!-- Optionnel: Permettre d'intercepter un schéma d'URL personnalisé unique -->
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="coeuracoeur" />
+</intent-filter>
+```
+*   `android:autoVerify="true"`: Demande au système Android de vérifier l'association de domaine immédiatement lors de l'installation de l'appareil (via le fichier `.well-known/assetlinks.json` hébergé sur votre site).
+
+---
+
+### B. Configuration de la preuve de propriété (Digital Asset Links)
+
+Pour que la redirection automatique (`autoVerify`) fonctionne, Android exige que vous prouviez que vous êtes bien le propriétaire du site `love.horarium.net`. Si cette étape n'est pas faite, l'utilisateur verra un sélecteur "Ouvrir avec Chrome ou Cœur à Cœur" au lieu d'ouvrir directement l'application.
+
+1. Générez l'empreinte **SHA-256** de votre signature d'application (au format Hexadécimal majuscule), soit par la commande `./gradlew signingReport` (durant le développement), soit depuis l'onglet de signature de votre compte de développeur dans l'interface Google Play Console.
+2. Créez un fichier texte nommé **`assetlinks.json`** ayant le contenu suivant :
+
+```json
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.coeuracoeur.app",
+      "sha256_cert_fingerprints": [
+        "VOTRE_SHA256_FINGERPRINT_MAJUSCULE_ICI"
+      ]
+    }
+  }
+]
+```
+*(Remplacez `VOTRE_SHA256_FINGERPRINT_MAJUSCULE_ICI` par votre empreinte SHA-256 réelle).*
+
+3. Téléversez ce fichier sur votre serveur web à cette adresse précise :
+   `https://love.horarium.net/.well-known/assetlinks.json`
+
+> **Note de Prod :**
+> * Le serveur doit impérativement utiliser le protocole **HTTPS** sécurisé.
+> * Le fichier doit être servi avec le type de contenu HTTP `application/json`.
+> * La redirection ne s'activera qu'une fois qu'Android aura validé ce fichier lors du premier démarrage/installation de l'application sur le téléphone.
+
+---
+
+### C. Comment cela fonctionne dans le code de l'App ?
+
+Dans le code de notre application (`src/components/MainApp.tsx`), nous avons déjà configuré l'écouteur d'événements Capacitor pour intercepter l'ouverture :
+
+```typescript
+// Ce code dans MainApp.tsx intercepte l'événement de redirection natif
+useEffect(() => {
+  if (Capacitor.isNativePlatform()) {
+    // Écoute les lancements ou retours au premier plan par URL de clic
+    App.addListener('appUrlOpen', (event: any) => {
+      try {
+        const rawUrl = event.url; // Contient p.ex. https://love.horarium.net/?join=1234
+        const urlString = rawUrl.replace('coeuracoeur://', 'https://');
+        const url = new URL(urlString);
+        
+        const joinCode = url.searchParams.get("join");
+        const sessionCode = url.searchParams.get("session");
+        
+        if (joinCode) {
+          // Renseigne automatique l'ID dans l'onglet de saisie du Lobby
+          window.dispatchEvent(new CustomEvent("app-join-link", { detail: joinCode }));
+        }
+        if (sessionCode) {
+          setActiveSessionId(sessionCode);
+        }
+      } catch (e) {
+        console.error('Erreur deep-linking:', e);
+      }
+    });
+  }
+}, []);
+```
+
+Cela garantit une expérience utilisateur incroyablement fluide pour tous ceux qui partagent ou reçoivent des quiz amoureux sur mobile !

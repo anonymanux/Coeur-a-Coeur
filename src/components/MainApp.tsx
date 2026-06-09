@@ -7,6 +7,8 @@ import { Heart, MessageCircle, Settings, Users, LogOut, Send, Play, UserPlus, Ch
 import { motion, AnimatePresence } from "motion/react";
 import { generateQuizQuestions, QuizQuestion, evaluateCompatibility } from "../services/geminiService";
 import { cn } from "../lib/utils";
+import { Capacitor } from "@capacitor/core";
+import { App } from "@capacitor/app";
 
 export function MainApp() {
   const { user } = useAuth();
@@ -18,6 +20,42 @@ export function MainApp() {
     const sessionToJoin = params.get("session");
     if (sessionToJoin) {
       setActiveSessionId(sessionToJoin);
+    }
+  }, []);
+
+  // Handle native deep linking for Capacitor
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const setupDeepLink = async () => {
+        App.addListener('appUrlOpen', (event: any) => {
+          try {
+            console.log('App opened with URL:', event.url);
+            // Translate scheme coeuracoeur:// to https://
+            const rawUrl = event.url;
+            const urlString = rawUrl.replace('coeuracoeur://', 'https://');
+            const url = new URL(urlString);
+            
+            const joinCode = url.searchParams.get("join");
+            const sessionCode = url.searchParams.get("session");
+            
+            if (joinCode) {
+              // Dispatch event for Lobby to pick it up
+              window.dispatchEvent(new CustomEvent("app-join-link", { detail: joinCode }));
+            }
+            if (sessionCode) {
+              setActiveSessionId(sessionCode);
+            }
+          } catch (e) {
+            console.error('Error parsing deep link URL:', e);
+          }
+        });
+      };
+      
+      setupDeepLink();
+      
+      return () => {
+        App.removeAllListeners();
+      };
     }
   }, []);
 
@@ -223,7 +261,7 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
     difficulty: "medium" as "easy" | "medium" | "hard"
   });
 
-  // Handle URL redirect query automatically
+  // Handle URL redirect query automatically and native deep-links
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("join");
@@ -231,6 +269,19 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
       setJoinId(code);
       setActiveTab("join");
     }
+
+    const handleJoinLink = (e: Event) => {
+      const customCode = (e as CustomEvent).detail;
+      if (customCode) {
+        setJoinId(customCode);
+        setActiveTab("join");
+      }
+    };
+
+    window.addEventListener("app-join-link", handleJoinLink);
+    return () => {
+      window.removeEventListener("app-join-link", handleJoinLink);
+    };
   }, []);
 
   const handleCreate = async () => {
