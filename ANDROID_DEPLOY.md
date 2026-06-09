@@ -56,7 +56,7 @@ npx cap add android
 
 ## Étape 2 : Configuration de Capacitor (`capacitor.config.ts` ou `.json`)
 
-Modifie ton fichier de configuration capacitor (probablement `capacitor.config.ts`) afin d'y ajouter les configurations d'authentification native et de définir correctement les serveurs de ressources.
+Modifie ton fichier de configuration capacitor (probablement `capacitor.config.ts`) afin d'y ajouter les configurations d'authentification native et de définir correctement les serveurs de ressources. Notez que dans Capacitor v8, l'option obsolète `bundledWebRuntime` a été complètement retirée des déclarations de types et n'est plus nécessaire.
 
 E.g. Exemple de `capacitor.config.ts` :
 
@@ -67,7 +67,6 @@ const config: CapacitorConfig = {
   appId: 'com.coeuracoeur.app',
   appName: 'Cœur à Cœur',
   webDir: 'dist',
-  bundledWebRuntime: false,
   plugins: {
     GoogleAuth: {
       // Ce Client ID Web sera fourni par la console Google Cloud de Firebase (voir Étape 4)
