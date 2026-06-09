@@ -323,3 +323,72 @@ useEffect(() => {
 ```
 
 Cela garantit une expérience utilisateur incroyablement fluide pour tous ceux qui partagent ou reçoivent des quiz amoureux sur mobile !
+
+---
+
+## Étape 8 : Intégration et fusion de la Barre de Statut Android (Style Immersif comme Flutter)
+
+Pour donner un aspect ultra premium, uniforme et professionnel à votre application Android (comme sur Flutter), la barre de statut (l'emplacement en haut affichant l'heure, la batterie et les icônes de notifications) doit fusionner harmonieusement avec le reste de l'interface en utilisant les mêmes couleurs, plutôt que d'avoir un bandeau noir ou gris générique.
+
+### A. Installer le Plugin StatusBar de Capacitor
+
+Pour manipuler nativement la barre de statut depuis le frontend :
+```bash
+npm install @capacitor/status-bar
+npx cap update
+```
+
+### B. Intégration dans le Code React (`src/components/MainApp.tsx`)
+
+Nous avons déjà injecté l'initialisation de la barre de statut dans le point d'entrée principal. Voici comment la barre est configurée pour fusionner avec la couleur blanche de notre en-tête d'application :
+
+```typescript
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
+
+useEffect(() => {
+  if (Capacitor.isNativePlatform()) {
+    const configureStatusBar = async () => {
+      try {
+        // Option 1 : Fond blanc uniforme pour fusionner avec le Header
+        await StatusBar.setBackgroundColor({ color: "#ffffff" });
+        
+        // Option 2 : Si vous préférez fusionner avec le fond rose pâle (#FFF5F7) de l'app
+        // await StatusBar.setBackgroundColor({ color: "#FFF5F7" });
+
+        // Style.Light indique à Android d'afficher des icônes sombres (batterie, heure) 
+        // afin qu'elles restent parfaitement visibles sur le fond clair de la barre.
+        await StatusBar.setStyle({ style: Style.Light });
+        
+        // Garantit que la barre reste visible tout en étant personnalisée
+        await StatusBar.show();
+      } catch (e) {
+        console.warn("Could not configure StatusBar natively:", e);
+      }
+    };
+    configureStatusBar();
+  }
+}, []);
+```
+
+### C. Mode Immersif Optionnel (Translucide ou Écran Large)
+
+Si vous voulez que votre interface s'étende **directement sous la barre de statut** (rendu totalement translucide/immersif sans aucun décalage), configurez Capacitor pour activer le chevauchement (Overlay).
+
+Dans votre `capacitor.config.ts` :
+```typescript
+const config: CapacitorConfig = {
+  // ... vos autres configs
+  plugins: {
+    // ...
+  },
+  // Vous pouvez aussi forcer une couleur par défaut depuis la configuration native :
+  android: {
+    backgroundColor: "#ffffff"
+  }
+};
+```
+
+Grâce à cette configuration, l'application présente un aspect uni et continu de haut en bas de l'écran tactile, simulant parfaitement le comportement natif fluide d'un développement Flutter ou natif pur.
+

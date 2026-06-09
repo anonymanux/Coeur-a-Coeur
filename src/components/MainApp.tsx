@@ -9,6 +9,7 @@ import { generateQuizQuestions, QuizQuestion, evaluateCompatibility } from "../s
 import { cn } from "../lib/utils";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
+import { StatusBar, Style } from "@capacitor/status-bar";
 
 export function MainApp() {
   const { user } = useAuth();
@@ -56,6 +57,25 @@ export function MainApp() {
       return () => {
         App.removeAllListeners();
       };
+    }
+  }, []);
+
+  // Configure Capacitor StatusBar to blend perfectly with the app design (like Flutter)
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const configureStatusBar = async () => {
+        try {
+          // #ffffff matches the top header perfectly
+          await StatusBar.setBackgroundColor({ color: "#ffffff" });
+          // Style.Light ensures icons/battery/wifi indicators are dark and legible on the white bar
+          await StatusBar.setStyle({ style: Style.Light });
+          // Ensure it's visible or hidden depending on design needs. Here we want it visible.
+          await StatusBar.show();
+        } catch (e) {
+          console.warn("Could not configure StatusBar natively:", e);
+        }
+      };
+      configureStatusBar();
     }
   }, []);
 
