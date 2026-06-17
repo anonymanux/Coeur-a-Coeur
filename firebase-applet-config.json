@@ -1,10 +1,10 @@
 {
-  "projectId": "ecobusiness-1197f",
-  "appId": "1:1029670771610:web:53c4137f10c68a5b52b823",
-  "apiKey": "AIzaSyCKZJOJ287_BQGGncveAywGrLUs57Sek6o",
-  "authDomain": "ecobusiness-1197f.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-5d01b9f8-9b67-488b-98d8-918df76ac865",
-  "storageBucket": "ecobusiness-1197f.firebasestorage.app",
-  "messagingSenderId": "1029670771610",
-  "measurementId": ""
+  "projectId": "lovematch-89272",
+  "appId": "1:827678251950:web:d9d7e266ef3bad5a1e063f",
+  "apiKey": "AIzaSyC01gWE52sICo2dU0dqNrhE6LuIs_2rHkY",
+  "authDomain": "lovematch-89272.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "lovematch-89272.firebasestorage.app",
+  "messagingSenderId": "827678251950",
+  "measurementId": "G-4XFSCQYLYD"
 }

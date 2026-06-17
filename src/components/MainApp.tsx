@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
-import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { GoogleAuthProvider, signInWithCredential, signInWithPopup, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, onSnapshot, collection, query, orderBy, limit, addDoc, updateDoc, where, getDocs, serverTimestamp } from "firebase/firestore";
 import { Heart, MessageCircle, Settings, Users, LogOut, Send, Play, UserPlus, ChevronRight, Copy, Check, Sparkles, RefreshCw, ThumbsUp, AlertCircle, Compass, Share2, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -10,10 +10,12 @@ import { cn } from "../lib/utils";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { StatusBar, Style } from "@capacitor/status-bar";
+import { GoogleSignIn } from "@capawesome/capacitor-google-sign-in";
 
 export function MainApp() {
   const { user } = useAuth();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Parse URL search params for direct join codes
   useEffect(() => {
@@ -23,6 +25,7 @@ export function MainApp() {
       setActiveSessionId(sessionToJoin);
     }
   }, []);
+
 
   // Handle native deep linking for Capacitor
   useEffect(() => {
@@ -65,12 +68,35 @@ export function MainApp() {
     if (Capacitor.isNativePlatform()) {
       const configureStatusBar = async () => {
         try {
-          // #ffffff matches the top header perfectly
-          await StatusBar.setBackgroundColor({ color: "#ffffff" });
-          // Style.Light ensures icons/battery/wifi indicators are dark and legible on the white bar
+          const { StatusBar, Style } = await import('@capacitor/status-bar');
+          
+          // 1. Définir la couleur de fond
+          await StatusBar.setBackgroundColor({ color: "#FFF5F7" });
+          
+          // 2. Style light pour les icônes sombres
           await StatusBar.setStyle({ style: Style.Light });
-          // Ensure it's visible or hidden depending on design needs. Here we want it visible.
+          
+          // 3. IMPORTANT: S'assurer que la barre est visible mais ne chevauche pas
           await StatusBar.show();
+          
+          // 4. Optionnel: Définir les overlays
+          // Pour Android, éviter que le contenu passe sous la barre
+          if (Capacitor.getPlatform() === 'android') {
+            // Ajouter une classe CSS personnalisée
+            document.documentElement.classList.add('android-status-bar');
+            
+            // Ajouter un style global
+            const style = document.createElement('style');
+            style.textContent = `
+              .android-status-bar .min-h-screen {
+                padding-top: 24px !important;
+              }
+              .android-status-bar header {
+                padding-top: calc(0.75rem + 24px) !important;
+              }
+            `;
+            document.head.appendChild(style);
+          }
         } catch (e) {
           console.warn("Could not configure StatusBar natively:", e);
         }
@@ -78,6 +104,9 @@ export function MainApp() {
       configureStatusBar();
     }
   }, []);
+
+
+
 
   if (!user) {
     return <AuthScreen />;
@@ -116,7 +145,7 @@ export function MainApp() {
           ))}
         </div>
 
-        <Header />
+        <Header onProfileClick={() => setIsProfileModalOpen(true)} />
         
         <div className="flex-1 overflow-hidden relative z-10 flex flex-col bg-[#FFF5F7]/30">
           <AnimatePresence mode="wait">
@@ -141,13 +170,18 @@ export function MainApp() {
             border-radius: 9999px;
           }
         `}</style>
+        
+        <UserProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
       </div>
     </div>
   );
 }
 
-function Header() {
-  const { user } = useAuth();
+function Header({ onProfileClick }: { onProfileClick: () => void }) {
+  const { user, profile } = useAuth();
+
+  const photoURL = profile?.photoURL || user?.photoURL;
+  const displayName = profile?.displayName || user?.displayName || "Utilisateur";
 
   return (
     <header className="flex items-center justify-between bg-white/80 backdrop-blur-md px-6 py-4 shadow-sm border-b border-rose-50 shrink-0 relative z-20">
@@ -161,12 +195,16 @@ function Header() {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full border border-rose-200 p-0.5 shadow-sm shrink-0">
-          {user?.photoURL ? (
-            <img src={user.photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
+        <div 
+          onClick={onProfileClick}
+          className="w-8 h-8 rounded-full border border-rose-200 hover:border-rose-400 p-0.5 shadow-sm shrink-0 cursor-pointer active:scale-95 transition-all"
+          title="Modifier votre profil et Clé Gemini"
+        >
+          {photoURL ? (
+            <img src={photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
           ) : (
-            <div className="w-full h-full bg-rose-100 rounded-full flex items-center justify-center font-bold text-rose-600 text-xs">
-              {user?.displayName?.[0]}
+            <div className="w-full h-full bg-rose-100 rounded-full flex items-center justify-center font-bold text-rose-600 text-xs text-center uppercase">
+              {displayName?.[0] || "?"}
             </div>
           )}
         </div>
@@ -182,25 +220,448 @@ function Header() {
   );
 }
 
-function AuthScreen() {
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
+function UserProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { user, profile } = useAuth();
+  const [displayName, setDisplayName] = useState("");
+  const [photoURL, setPhotoURL] = useState("");
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (isOpen && user) {
+      setDisplayName(profile?.displayName || user.displayName || "");
+      setPhotoURL(profile?.photoURL || user.photoURL || "");
+      setGeminiApiKey(profile?.geminiApiKey || "");
+      setSaveStatus("idle");
+      setErrorMessage("");
+    }
+  }, [isOpen, profile, user]);
+
+  if (!isOpen || !user) return null;
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setSaveStatus("idle");
+    setErrorMessage("");
     try {
-      const result = await signInWithPopup(auth, provider);
-      const userRef = doc(db, "users", result.user.uid);
-      const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          uid: result.user.uid,
-          displayName: result.user.displayName,
-          photoURL: result.user.photoURL,
-          createdAt: serverTimestamp(),
-        });
-      }
-    } catch (e) {
-      console.error(e);
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, {
+        displayName: displayName.trim(),
+        photoURL: photoURL.trim(),
+        geminiApiKey: geminiApiKey.trim(),
+        lastUpdatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      setSaveStatus("success");
+      setTimeout(() => {
+        onClose();
+      }, 1000);
+    } catch (err: any) {
+      console.error("Error saving profile:", err);
+      setSaveStatus("error");
+      setErrorMessage(err.message || "Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  const AVATAR_PRESETS = [
+    { label: "Cupidon", url: "https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=100&auto=format&fit=crop&q=60" },
+    { label: "Cœurs", url: "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=100&auto=format&fit=crop&q=60" },
+    { label: "Cosmique", url: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=100&auto=format&fit=crop&q=60" },
+    { label: "Fleur Rose", url: "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=100&auto=format&fit=crop&q=60" },
+    { label: "Félin Mignon", url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=100&auto=format&fit=crop&q=60" },
+    { label: "Panda", url: "https://images.unsplash.com/photo-1508921912186-1d1a45ebb3c1?w=100&auto=format&fit=crop&q=60" }
+  ];
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop overlay */}
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="absolute inset-0 bg-[#331122]/40 backdrop-blur-sm"
+        />
+
+        {/* Modal card */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          transition={{ type: "spring", duration: 0.5 }}
+          className="relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl border-4 border-rose-100 p-6 overflow-hidden z-50 flex flex-col"
+        >
+          {/* Header decor */}
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-rose-200/40 rounded-bl-full pointer-events-none" />
+          
+          <div className="flex items-center justify-between mb-5 relative z-10">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500">
+                <Settings className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
+              </div>
+              <h2 className="text-xl font-black text-rose-600 tracking-tight">Mon Profil</h2>
+            </div>
+            <button 
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full hover:bg-slate-50 flex items-center justify-center transition-colors font-bold text-lg"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSave} className="space-y-4 relative z-10 flex-grow overflow-y-auto max-h-[70vh] pr-1 scrollbar-none">
+            {/* Display name field */}
+            <div>
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                Pseudo / Surnom de couple
+              </label>
+              <input
+                type="text"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Votre pseudo..."
+                className="w-full px-4 py-3 rounded-xl bg-rose-50/50 border border-rose-100 text-slate-800 focus:outline-none focus:border-rose-400 focus:bg-white text-sm font-bold transition-all"
+              />
+            </div>
+
+            {/* Avatar picker / Photo URL field */}
+            <div>
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                Photo de profil (URL)
+              </label>
+              
+              {/* Preview and Input */}
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-full border-2 border-rose-200 p-0.5 overflow-hidden shadow-sm shrink-0 bg-rose-50">
+                  {photoURL ? (
+                    <img src={photoURL} alt="Preview" className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-rose-200 flex items-center justify-center font-bold text-rose-600 text-sm">
+                      {displayName[0] || "?"}
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="url"
+                  value={photoURL}
+                  onChange={(e) => setPhotoURL(e.target.value)}
+                  placeholder="Lien d'image (https://...)"
+                  className="flex-1 px-3 py-2 border border-rose-100 rounded-lg text-xs font-medium text-slate-600 focus:outline-none focus:border-rose-300"
+                />
+              </div>
+
+              {/* Preset selection */}
+              <div className="bg-rose-50/30 p-2.5 rounded-xl border border-rose-100/55">
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-1.5">
+                  Avatars prédéfinis :
+                </span>
+                <div className="grid grid-cols-6 gap-2">
+                  {AVATAR_PRESETS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setPhotoURL(preset.url)}
+                      title={preset.label}
+                      className={`w-9 h-9 rounded-full border-2 overflow-hidden shadow-xs hover:scale-110 active:scale-95 transition-all ${
+                        photoURL === preset.url ? "border-rose-500 shadow-sm" : "border-transparent"
+                      }`}
+                    >
+                      <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Gemini API Key field */}
+            <div className="pt-2 border-t border-rose-50">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider">
+                  Votre Clé API Gemini
+                </label>
+                <span className="text-[9px] bg-emerald-50 text-emerald-600 font-extrabold px-1.5 py-0.5 rounded-full border border-emerald-100">
+                  Optionnel
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium leading-relaxed mb-2.5">
+                Utilisez votre propre clé API Gemini pour générer vos quiz et analyses à l'infini !
+              </p>
+              
+              <div className="relative">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full pl-4 pr-11 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-rose-400 focus:bg-white text-xs font-mono transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors"
+                >
+                  {showKey ? "Masquer" : "Afficher"}
+                </button>
+              </div>
+
+              <div className="mt-2.5 flex justify-end">
+                <a 
+                  href="https://aistudio.google.com/app/apikey" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-rose-500 font-bold hover:underline inline-flex items-center gap-1"
+                >
+                  Obtenir une clé API gratuite <ChevronRight className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Error or Success notification banner */}
+            {saveStatus === "success" && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-extrabold flex items-center gap-2 border border-emerald-100"
+              >
+                <div className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[10px]">✓</div>
+                Sauvegardé avec succès !
+              </motion.div>
+            )}
+
+            {saveStatus === "error" && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-medium border border-red-100"
+              >
+                {errorMessage}
+              </motion.div>
+            )}
+
+            {/* Submission button */}
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              disabled={isSaving}
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-400 to-rose-500 hover:from-rose-500 hover:to-rose-600 text-white font-black text-sm py-4 rounded-xl shadow-lg shadow-rose-200/80 transition-all text-center mt-4 disabled:opacity-50 cursor-pointer"
+            >
+              {isSaving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Enregistrement...
+                </>
+              ) : (
+                <>
+                  Enregistrer
+                </>
+              )}
+            </motion.button>
+          </form>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
+
+function AuthScreen() {
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
+
+  // Initialize Google Sign-In for Capacitor
+  useEffect(() => {
+    const initializeGoogleSignIn = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          console.log("=========*****========= Initializing Google Sign-In for native platform ===");
+          
+          const clientId = process.env.VITE_GOOGLE_WEB_CLIENT_ID;
+          
+          if (!clientId) {
+            throw new Error("VITE_GOOGLE_WEB_CLIENT_ID is not defined in environment variables");
+          }
+          
+          console.log("Client ID found:", clientId.substring(0, 30) + "...");
+          
+          await GoogleSignIn.initialize({
+            clientId: clientId,
+            scopes: ['profile', 'email'],
+          });
+          
+          console.log("Google Sign-In initialized successfully");
+          setIsInitializing(false);
+        } catch (error) {
+          console.error("Failed to initialize Google Sign-In:", error);
+          setInitError("Impossible d'initialiser la connexion Google. Veuillez redémarrer l'application.");
+          setIsInitializing(false);
+        }
+      } else {
+        setIsInitializing(false);
+      }
+    };
+    
+    initializeGoogleSignIn();
+  }, []);
+
+  const handleLogin = async () => {
+    // Vérifier si l'initialisation est terminée
+    if (isInitializing) {
+      setInitError("Initialisation en cours, veuillez patienter...");
+      return;
+    }
+
+    setIsSigningIn(true);
+    setInitError(null);
+    
+    try {
+      let userCredential;
+  
+      if (Capacitor.isNativePlatform()) {
+        console.log("📱 Native platform - attempting Google Sign-In");
+        
+        try {
+          
+          
+          // Déclencher le flux de connexion
+          const result = await GoogleSignIn.signIn();
+          console.log("✅ Sign-in result received:", result);
+          
+          // Extraire l'ID Token (structure correcte pour @capawesome)
+          const idToken = result.idToken || (result as any).authentication?.idToken;
+
+          
+          if (!idToken) {
+            throw new Error("Impossible d'obtenir l'ID Token depuis Google Sign-In");
+          }
+          
+          console.log("🔑 ID Token obtained, creating Firebase credential");
+          const credential = GoogleAuthProvider.credential(idToken);
+          userCredential = await signInWithCredential(auth, credential);
+          
+        } catch (error: any) {
+          console.error("Google Sign-In error:", error);
+          
+          // Gérer l'annulation par l'utilisateur (pas une erreur à afficher)
+          if (error.code === 'sign_in_canceled' || error.message?.includes('canceled')) {
+            console.log("User cancelled sign-in");
+            setInitError(null); // Pas d'erreur, juste annulation
+            return;
+          }
+          
+          // Gérer l'absence de Google Play Services
+          if (error.message?.includes('Google Play services')) {
+            setInitError("Google Play Services n'est pas disponible sur cet appareil");
+            return;
+          }
+          
+          // Si non initialisé, réessayer une fois
+          if (error.message?.includes("not initialized")) {
+            console.log("Re-initializing Google Sign-In...");
+            const clientId = process.env.VITE_GOOGLE_WEB_CLIENT_ID;
+            if (clientId) {
+              await GoogleSignIn.initialize({
+                clientId: clientId,
+                scopes: ['profile', 'email'],
+              });
+              const result = await GoogleSignIn.signIn();
+
+              const idToken = result.idToken || (result as any).authentication?.idToken;
+              if (!idToken) throw new Error("No ID token after re-initialization");
+              const credential = GoogleAuthProvider.credential(idToken);
+              userCredential = await signInWithCredential(auth, credential);
+            } else {
+              throw new Error("Client ID missing");
+            }
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        // Web platform - utiliser popup au lieu de redirect
+        console.log("🌐 Web platform - attempting sign in with popup");
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        userCredential = await signInWithPopup(auth, provider);
+      }
+  
+      const user = userCredential.user;
+      console.log("✅ User signed in:", user.email);
+  
+      // Firestore persistence - créer/update le document utilisateur
+      if (user) {
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (!userSnap.exists()) {
+          await setDoc(userRef, {
+            uid: user.uid,
+            displayName: user.displayName || 'Utilisateur',
+            email: user.email,
+            photoURL: user.photoURL,
+            createdAt: serverTimestamp(),
+            lastLoginAt: serverTimestamp(),
+          });
+        } else {
+          // Mettre à jour la dernière connexion
+          await setDoc(userRef, {
+            lastLoginAt: serverTimestamp(),
+          }, { merge: true });
+        }
+      }
+      
+      console.log("🎉 Authentication and Firestore sync complete:", user.email);
+  
+    } catch (error: any) {
+      console.error("❌ Complete authentication error:", error);
+      
+      // Messages d'erreur plus spécifiques
+      if (error.code === 'auth/popup-blocked') {
+        setInitError("Veuillez autoriser les popups pour ce site");
+      } else if (error.code === 'auth/unauthorized-domain' || error.message?.includes('auth/unauthorized-domain')) {
+        const hostname = window.location.hostname;
+        setInitError(
+          `Ce domaine (${hostname}) n'est pas autorisé dans votre console Firebase. ` +
+          `Veuillez vous rendre dans Firebase Console -> Authentication -> Paramètres (Settings) -> "Domaines d'autorisation" (Authorized Domains) et ajoutez "${hostname}".`
+        );
+      } else if (error.code === 'auth/network-request-failed') {
+        setInitError("Problème de connexion internet. Vérifiez votre réseau.");
+      } else if (error.message?.includes('Firebase')) {
+        setInitError("Erreur de connexion au service d'authentification");
+      } else if (error.message?.includes('SHA-1')) {
+        setInitError("Erreur de configuration : Empreinte SHA-1 manquante dans Firebase Console");
+      } else if (error.message?.includes('client ID') || error.message?.includes('Client ID')) {
+        setInitError("Erreur de configuration : Client ID Google invalide");
+      } else {
+        setInitError(error.message || "Une erreur est survenue lors de la connexion");
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  // Afficher un écran de chargement pendant l'initialisation sur native
+  if (isInitializing && Capacitor.isNativePlatform()) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#FFF5F7]">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+        >
+          <Heart className="w-16 h-16 text-rose-400 fill-rose-200" />
+        </motion.div>
+        <p className="mt-6 text-rose-500 font-medium">Initialisation...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen text-center p-6 bg-[#FFF5F7] relative overflow-hidden">
@@ -212,7 +673,12 @@ function AuthScreen() {
             className="absolute text-rose-300"
             initial={{ scale: 0.5, y: 800, opacity: 0.1 }}
             animate={{ y: -100, opacity: [0.1, 0.5, 0.1] }}
-            transition={{ duration: 7 + Math.random() * 5, repeat: Infinity, delay: i * 1.2 }}
+            transition={{ 
+              duration: 7 + Math.random() * 5, 
+              repeat: Infinity, 
+              delay: i * 1.2,
+              ease: "linear"
+            }}
             style={{ left: `${5 + i * 13}%` }}
           >
             ❤️
@@ -226,7 +692,7 @@ function AuthScreen() {
         transition={{ type: "spring", stiffness: 100 }}
         className="mb-10 relative z-10"
       >
-        <div className="w-24 h-24 bg-rose-500 rounded-[1.8rem] flex items-center justify-center text-white shadow-2xl shadow-rose-200 mx-auto rotate-12 mb-6 relative">
+        <div className="w-24 h-24 bg-gradient-to-br from-rose-400 to-rose-500 rounded-[1.8rem] flex items-center justify-center text-white shadow-2xl shadow-rose-200 mx-auto rotate-12 mb-6 relative">
           <Heart className="w-12 h-12 fill-current" />
           <motion.div 
             animate={{ scale: [1, 1.1, 1] }} 
@@ -245,19 +711,41 @@ function AuthScreen() {
       <motion.button 
         whileTap={{ scale: 0.95 }}
         onClick={handleLogin}
-        className="flex items-center gap-3 bg-white px-8 py-4 rounded-2xl font-bold text-slate-800 shadow-lg shadow-slate-200/60 border border-slate-100 hover:scale-[1.02] transition-transform group relative z-10"
+        disabled={isSigningIn}
+        className="flex items-center gap-3 bg-white px-8 py-4 rounded-2xl font-bold text-slate-800 shadow-lg shadow-slate-200/60 border border-slate-100 hover:shadow-xl hover:scale-[1.02] transition-all duration-200 group relative z-10 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
       >
-        <svg viewBox="0 0 24 24" className="w-5 h-5 group-hover:rotate-12 transition-transform shrink-0" xmlns="http://www.w3.org/2000/svg">
-          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-        </svg>
-        Se connecter avec Google
+        {isSigningIn ? (
+          <>
+            <div className="w-5 h-5 border-2 border-slate-300 border-t-rose-500 rounded-full animate-spin"></div>
+            Connexion en cours...
+          </>
+        ) : (
+          <>
+            <svg viewBox="0 0 24 24" className="w-5 h-5 group-hover:rotate-12 transition-transform shrink-0" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+            </svg>
+            Se connecter avec Google
+          </>
+        )}
       </motion.button>
+
+      {initError && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-6 p-3 bg-red-50 text-red-600 rounded-xl text-sm max-w-[280px] z-10 border border-red-100"
+        >
+          {initError}
+        </motion.div>
+      )}
     </div>
   );
 }
+
+export default AuthScreen;
 
 const PRESET_THEMES = [
   { icon: "🌶️", label: "Coquin", value: "Désirs, Séduction, Secrets intimes, Fantasmes" },
@@ -269,7 +757,7 @@ const PRESET_THEMES = [
 ];
 
 function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => void }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<"create" | "join">("create");
   const [joinId, setJoinId] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -312,7 +800,7 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
     const sessionId = `session_${Date.now()}`;
     
     try {
-      const genQuestions = await generateQuizQuestions(config.topics, config.count, config.difficulty);
+      const genQuestions = await generateQuizQuestions(config.topics, config.count, config.difficulty, profile?.geminiApiKey);
       
       if (!genQuestions || genQuestions.length === 0) {
         throw new Error("L'IA n'a pas pu générer de questions. Essayez d'autres thèmes.");
@@ -1229,6 +1717,7 @@ function GameRoom({ sessionId, onLeave }: { sessionId: string, onLeave: () => vo
 }
 
 function Results({ questions, answers, onLeave, session }: { questions: QuizQuestion[], answers: any[], onLeave: () => void, session: any }) {
+  const { profile } = useAuth();
   const [result, setResult] = useState<{ score: number, analysis: string } | null>(null);
 
   useEffect(() => {
@@ -1241,7 +1730,7 @@ function Results({ questions, answers, onLeave, session }: { questions: QuizQues
       
       const u1Answers = answers.filter(a => a.userId === session.creatorId).sort((a, b) => a.questionIndex - b.questionIndex).map(a => a.answerIndex);
       const u2Answers = answers.filter(a => a.userId === session.joinerId).sort((a, b) => a.questionIndex - b.questionIndex).map(a => a.answerIndex);
-      const res = await evaluateCompatibility(u1Answers, u2Answers, questions);
+      const res = await evaluateCompatibility(u1Answers, u2Answers, questions, profile?.geminiApiKey);
       setResult(res);
     };
     calc();

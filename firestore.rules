@@ -1,12 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // Default deny catch-all
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helpers
+    // Global Safety Helpers
     function isSignedIn() {
       return request.auth != null;
     }
@@ -27,26 +27,52 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function getSession(sessId) {
+      return get(/databases/$(database)/documents/sessions/$(sessId)).data;
+    }
+    
+    function isParticipantOfSession(sessId) {
+      return isSignedIn() && (request.auth.uid == getSession(sessId).creatorId || request.auth.uid == getSession(sessId).joinerId);
+    }
+
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128
+        && data.displayName is string && data.displayName.size() <= 100
+        && (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 200))
+        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 2048))
+        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 1000))
+        && (!data.keys().hasAny(['geminiApiKey']) || (data.geminiApiKey is string && data.geminiApiKey.size() <= 256));
+    }
+
     // User Profiles
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isOwner(userId) 
-        && (incoming().uid == request.auth.uid)
-        && (incoming().displayName is string && incoming().displayName.size() <= 50)
-        && (incoming().createdAt == request.time);
+        && isValidUser(incoming())
+        && incoming().createdAt == request.time;
       allow update: if isOwner(userId)
+        && isValidUser(incoming())
         && (incoming().uid == existing().uid)
         && (incoming().createdAt == existing().createdAt)
-        && (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio']));
+        && (incoming().diff(existing()).affectedKeys().hasOnly([
+             'displayName', 'photoURL', 'bio', 'geminiApiKey', 'lastLoginAt', 'lastUpdatedAt'
+           ]))
+        && (!incoming().keys().hasAny(['lastLoginAt']) || incoming().lastLoginAt == request.time)
+        && (!incoming().keys().hasAny(['lastUpdatedAt']) || incoming().lastUpdatedAt == request.time);
     }
 
     // Sessions
     match /sessions/{sessionId} {
       function isParticipant(sessionData) {
-        return isSignedIn() && (request.auth.uid == sessionData.creatorId || request.auth.uid == (sessionData.get('joinerId', null)));
+        return isSignedIn() && (request.auth.uid == sessionData.creatorId || request.auth.uid == sessionData.joinerId);
       }
 
-      allow list: if isSignedIn(); 
+      allow list: if isSignedIn() && (
+        resource.data.status == 'waiting' || 
+        resource.data.creatorId == request.auth.uid || 
+        resource.data.joinerId == request.auth.uid
+      );
+      
       allow get: if isSignedIn();
       
       allow create: if isSignedIn()
@@ -56,17 +82,46 @@ service cloud.firestore {
         && (incoming().createdAt == request.time);
       
       allow update: if isSignedIn() && (
-        // Join Action
-        (existing().status == 'waiting' && incoming().status == 'ongoing' && (incoming().joinerId == request.auth.uid || existing().creatorId == request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'joinerId', 'updatedAt'])) ||
-        // State Update (participants only)
-        (isParticipant(existing()) && incoming().diff(existing()).affectedKeys().hasAny(['currentQuestionIndex', 'status', 'updatedAt']))
+        // Action 1: Join Session
+        (existing().status == 'waiting' && 
+         incoming().status == 'ongoing' && 
+         incoming().joinerId == request.auth.uid && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'joinerId', 'updatedAt'])) ||
+         
+        // Action 2: Progress (Next Question or Complete)
+        (isParticipant(existing()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['currentQuestionIndex', 'status', 'updatedAt'])) ||
+         
+        // Action 3: Abandon Session
+        (isParticipant(existing()) && 
+         (incoming().status == 'abandoned' || incoming().status == 'cancelled') && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'abandonedBy', 'abandonedByName', 'updatedAt'])) ||
+         
+        // Action 4: Cancel Session
+        (isParticipant(existing()) && 
+         incoming().status == 'cancelled' && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
       );
     }
 
     // Subcollections
     match /sessions/{sessionId}/questions/{questionId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn(); 
+      allow read: if isParticipantOfSession(sessionId);
+      allow create: if isSignedIn() && (request.auth.uid == getSession(sessionId).creatorId);
+    }
+
+    match /sessions/{sessionId}/answers/{answerId} {
+      allow read: if isParticipantOfSession(sessionId);
+      allow create: if isParticipantOfSession(sessionId)
+        && (incoming().userId == request.auth.uid)
+        && (incoming().timestamp == request.time);
+    }
+
+    match /sessions/{sessionId}/messages/{messageId} {
+      allow read: if isParticipantOfSession(sessionId);
+      allow create: if isParticipantOfSession(sessionId)
+        && (incoming().senderId == request.auth.uid)
+        && (incoming().timestamp == request.time);
     }
 
     match /health/{docId} {
@@ -75,20 +130,6 @@ service cloud.firestore {
     
     match /test/{docId} {
       allow read: if true;
-    }
-
-    match /sessions/{sessionId}/answers/{answerId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() 
-        && (incoming().userId == request.auth.uid)
-        && (incoming().timestamp == request.time);
-    }
-
-    match /sessions/{sessionId}/messages/{messageId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-        && (incoming().senderId == request.auth.uid)
-        && (incoming().timestamp == request.time);
     }
   }
 }
