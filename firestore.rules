@@ -1,135 +1,46 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny catch-all
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Global Safety Helpers
+    // Helper to check authentication
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Helper to check ownership
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    function getSession(sessId) {
-      return get(/databases/$(database)/documents/sessions/$(sessId)).data;
-    }
-    
-    function isParticipantOfSession(sessId) {
-      return isSignedIn() && (request.auth.uid == getSession(sessId).creatorId || request.auth.uid == getSession(sessId).joinerId);
-    }
-
-    function isValidUser(data) {
-      return data.uid is string && data.uid.size() <= 128
-        && data.displayName is string && data.displayName.size() <= 100
-        && (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 200))
-        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 2048))
-        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 1000))
-        && (!data.keys().hasAny(['geminiApiKey']) || (data.geminiApiKey is string && data.geminiApiKey.size() <= 256));
-    }
-
-    // User Profiles
+    // User collection: anyone logged in can read (to display scores/names), only owner can write
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isOwner(userId) 
-        && isValidUser(incoming())
-        && incoming().createdAt == request.time;
-      allow update: if isOwner(userId)
-        && isValidUser(incoming())
-        && (incoming().uid == existing().uid)
-        && (incoming().createdAt == existing().createdAt)
-        && (incoming().diff(existing()).affectedKeys().hasOnly([
-             'displayName', 'photoURL', 'bio', 'geminiApiKey', 'lastLoginAt', 'lastUpdatedAt'
-           ]))
-        && (!incoming().keys().hasAny(['lastLoginAt']) || incoming().lastLoginAt == request.time)
-        && (!incoming().keys().hasAny(['lastUpdatedAt']) || incoming().lastUpdatedAt == request.time);
+      allow write: if isOwner(userId);
     }
 
-    // Sessions
+    // Sessions and subcollections
     match /sessions/{sessionId} {
-      function isParticipant(sessionData) {
-        return isSignedIn() && (request.auth.uid == sessionData.creatorId || request.auth.uid == sessionData.joinerId);
+      allow read, write: if isSignedIn();
+
+      match /questions/{questionId} {
+        allow read, write: if isSignedIn();
       }
 
-      allow list: if isSignedIn() && (
-        resource.data.status == 'waiting' || 
-        resource.data.creatorId == request.auth.uid || 
-        resource.data.joinerId == request.auth.uid
-      );
-      
-      allow get: if isSignedIn();
-      
-      allow create: if isSignedIn()
-        && (incoming().creatorId == request.auth.uid)
-        && (incoming().status == 'waiting')
-        && (incoming().id.matches('^[0-9]{4}$'))
-        && (incoming().createdAt == request.time);
-      
-      allow update: if isSignedIn() && (
-        // Action 1: Join Session
-        (existing().status == 'waiting' && 
-         incoming().status == 'ongoing' && 
-         incoming().joinerId == request.auth.uid && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'joinerId', 'updatedAt'])) ||
-         
-        // Action 2: Progress (Next Question or Complete)
-        (isParticipant(existing()) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['currentQuestionIndex', 'status', 'updatedAt'])) ||
-         
-        // Action 3: Abandon Session
-        (isParticipant(existing()) && 
-         (incoming().status == 'abandoned' || incoming().status == 'cancelled') && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'abandonedBy', 'abandonedByName', 'updatedAt'])) ||
-         
-        // Action 4: Cancel Session
-        (isParticipant(existing()) && 
-         incoming().status == 'cancelled' && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
-      );
+      match /answers/{answerId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    // Subcollections
-    match /sessions/{sessionId}/questions/{questionId} {
-      allow read: if isParticipantOfSession(sessionId);
-      allow create: if isSignedIn() && (request.auth.uid == getSession(sessionId).creatorId);
-    }
-
-    match /sessions/{sessionId}/answers/{answerId} {
-      allow read: if isParticipantOfSession(sessionId);
-      allow create: if isParticipantOfSession(sessionId)
-        && (incoming().userId == request.auth.uid)
-        && (incoming().timestamp == request.time);
-    }
-
-    match /sessions/{sessionId}/messages/{messageId} {
-      allow read: if isParticipantOfSession(sessionId);
-      allow create: if isParticipantOfSession(sessionId)
-        && (incoming().senderId == request.auth.uid)
-        && (incoming().timestamp == request.time);
-    }
-
+    // Catch-all fallbacks
     match /health/{docId} {
       allow read: if isSignedIn();
     }
     
     match /test/{docId} {
-      allow read: if true;
+      allow read, write: if true;
     }
   }
 }
