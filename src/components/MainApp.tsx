@@ -227,6 +227,9 @@ function UserProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   const [displayName, setDisplayName] = useState("");
   const [photoURL, setPhotoURL] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [gender, setGender] = useState<"Homme" | "Femme" | "">("");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
+  const [qcmGoal, setQcmGoal] = useState<"monsieur" | "madame" | "standard">("standard");
   const [showKey, setShowKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
@@ -237,6 +240,9 @@ function UserProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
       setDisplayName(profile?.displayName || user.displayName || "");
       setPhotoURL(profile?.photoURL || user.photoURL || "");
       setGeminiApiKey(profile?.geminiApiKey || "");
+      setGender(profile?.gender || "");
+      setGeminiModel(profile?.geminiModel || "gemini-2.5-flash");
+      setQcmGoal(profile?.qcmGoal || "standard");
       setSaveStatus("idle");
       setErrorMessage("");
     }
@@ -255,6 +261,9 @@ function UserProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
         displayName: displayName.trim(),
         photoURL: photoURL.trim(),
         geminiApiKey: geminiApiKey.trim(),
+        gender: gender,
+        geminiModel: geminiModel,
+        qcmGoal: qcmGoal,
         lastUpdatedAt: serverTimestamp(),
       }, { merge: true });
 
@@ -381,6 +390,100 @@ function UserProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* Sexe (Genre) Picker */}
+            <div className="pt-2 border-t border-rose-50">
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                Mon Sexe (Genre)
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGender("Homme")}
+                  className={`py-2.5 px-4 rounded-xl font-bold text-sm border flex items-center justify-center gap-2 transition-all ${
+                    gender === "Homme"
+                      ? "bg-rose-500 border-rose-500 text-white shadow-md shadow-rose-100"
+                      : "bg-white border-rose-100 text-rose-500 hover:bg-rose-50/50"
+                  }`}
+                >
+                  <span>👨</span> Homme
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGender("Femme")}
+                  className={`py-2.5 px-4 rounded-xl font-bold text-sm border flex items-center justify-center gap-2 transition-all ${
+                    gender === "Femme"
+                      ? "bg-rose-500 border-rose-500 text-white shadow-md shadow-rose-100"
+                      : "bg-white border-rose-100 text-rose-500 hover:bg-rose-50/50"
+                  }`}
+                >
+                  <span>👩</span> Femme
+                </button>
+              </div>
+            </div>
+
+            {/* Version Gemini Selection */}
+            <div className="pt-2 border-t border-rose-50">
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">
+                Version de l'IA (Gemini)
+              </label>
+              <select
+                value={geminiModel}
+                onChange={(e) => setGeminiModel(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl bg-rose-50/50 border border-rose-100 text-slate-700 font-bold text-xs focus:outline-none focus:border-rose-300 focus:bg-white transition-all cursor-pointer"
+              >
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rapide & Moderne)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Haute Précision)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Classique)</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Analyse Poussée)</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+              </select>
+            </div>
+
+            {/* Objectif de Génération QCM */}
+            <div className="pt-2 border-t border-rose-50">
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                Type de Quiz à générer
+              </label>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQcmGoal("standard")}
+                  className={`text-left p-3 rounded-xl border transition-all ${
+                    qcmGoal === "standard"
+                      ? "bg-rose-50 border-rose-300 text-rose-700 font-bold"
+                      : "bg-white border-slate-100 text-slate-600 hover:bg-rose-50/25"
+                  }`}
+                >
+                  <div className="text-xs font-black">🌟 Standard (Mixte)</div>
+                  <div className="text-[10px] opacity-80 mt-0.5">Tester la compatibilité générale et les préférences de chacun.</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQcmGoal("monsieur")}
+                  className={`text-left p-3 rounded-xl border transition-all ${
+                    qcmGoal === "monsieur"
+                      ? "bg-rose-50 border-rose-300 text-rose-700"
+                      : "bg-white border-slate-100 text-slate-600 hover:bg-rose-50/25"
+                  }`}
+                >
+                  <div className="text-xs font-black">👨 Pour Monsieur</div>
+                  <div className="text-[10px] opacity-80 mt-0.5">Orienté sur ses goûts et attitudes pour voir si on le connaît bien.</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQcmGoal("madame")}
+                  className={`text-left p-3 rounded-xl border transition-all ${
+                    qcmGoal === "madame"
+                      ? "bg-rose-50 border-rose-300 text-rose-700"
+                      : "bg-white border-slate-100 text-slate-600 hover:bg-rose-50/25"
+                  }`}
+                >
+                  <div className="text-xs font-black">👩 Pour Madame</div>
+                  <div className="text-[10px] opacity-80 mt-0.5">Orienté sur ses goûts et sentiments pour voir si on la connaît bien.</div>
+                </button>
               </div>
             </div>
 
@@ -809,7 +912,14 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
     const sessionId = `session_${Date.now()}`;
     
     try {
-      const genQuestions = await generateQuizQuestions(config.topics, config.count, config.difficulty, profile?.geminiApiKey);
+      const genQuestions = await generateQuizQuestions(
+        config.topics,
+        config.count,
+        config.difficulty,
+        profile?.geminiApiKey,
+        profile?.geminiModel,
+        profile?.qcmGoal
+      );
       
       if (!genQuestions || genQuestions.length === 0) {
         throw new Error("L'IA n'a pas pu générer de questions. Essayez d'autres thèmes.");
@@ -819,6 +929,10 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
       await setDoc(sessionRef, {
         id: shortId,
         creatorId: user.uid,
+        creatorName: profile?.displayName || user.displayName || "Créateur",
+        creatorGender: profile?.gender || "",
+        qcmGoal: profile?.qcmGoal || "standard",
+        geminiModel: profile?.geminiModel || "gemini-2.5-flash",
         status: "waiting",
         config: {
           questionCount: config.count,
@@ -839,10 +953,26 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
       if (e instanceof Error) {
         try {
           const parsed = JSON.parse(e.message);
-          message = parsed.error || e.message;
+          if (parsed && typeof parsed === "object") {
+            if (parsed.error && typeof parsed.error === "object" && parsed.error.message) {
+              message = parsed.error.message;
+            } else if (typeof parsed.error === "string") {
+              message = parsed.error;
+            } else if (parsed.message) {
+              message = parsed.message;
+            } else {
+              message = JSON.stringify(parsed);
+            }
+          } else {
+            message = e.message;
+          }
         } catch {
           message = e.message;
         }
+      } else if (typeof e === "object" && e !== null) {
+        message = e.message || JSON.stringify(e);
+      } else if (typeof e === "string") {
+        message = e;
       }
       setError(message);
     } finally {
@@ -881,6 +1011,8 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
 
       await updateDoc(doc(db, "sessions", sessionDoc.id), {
         joinerId: user.uid,
+        joinerName: profile?.displayName || user.displayName || "Partenaire",
+        joinerGender: profile?.gender || "",
         status: "ongoing",
         updatedAt: serverTimestamp()
       });
@@ -1739,11 +1871,30 @@ function Results({ questions, answers, onLeave, session }: { questions: QuizQues
       
       const u1Answers = answers.filter(a => a.userId === session.creatorId).sort((a, b) => a.questionIndex - b.questionIndex).map(a => a.answerIndex);
       const u2Answers = answers.filter(a => a.userId === session.joinerId).sort((a, b) => a.questionIndex - b.questionIndex).map(a => a.answerIndex);
-      const res = await evaluateCompatibility(u1Answers, u2Answers, questions, profile?.geminiApiKey);
+      
+      const creatorName = session.creatorName || "Joueur 1";
+      const creatorGender = session.creatorGender || "";
+      const joinerName = session.joinerName || "Joueur 2";
+      const joinerGender = session.joinerGender || "";
+      const qcmGoal = session.qcmGoal || "standard";
+      const geminiModel = session.geminiModel || profile?.geminiModel || "gemini-2.5-flash";
+
+      const res = await evaluateCompatibility(
+        u1Answers, 
+        u2Answers, 
+        questions, 
+        profile?.geminiApiKey,
+        geminiModel,
+        creatorName,
+        creatorGender,
+        joinerName,
+        joinerGender,
+        qcmGoal
+      );
       setResult(res);
     };
     calc();
-  }, [answers, questions]);
+  }, [answers, questions, session, profile]);
 
   if (!result) return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white/40">

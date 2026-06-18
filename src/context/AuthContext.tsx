@@ -7,6 +7,9 @@ export interface AuthProfile {
   displayName?: string;
   photoURL?: string;
   geminiApiKey?: string;
+  gender?: "Homme" | "Femme" | "";
+  geminiModel?: string;
+  qcmGoal?: "monsieur" | "madame" | "standard";
 }
 
 interface AuthContextType {
@@ -42,12 +45,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               displayName: data.displayName || currentUser.displayName || "Utilisateur",
               photoURL: data.photoURL || currentUser.photoURL || "",
               geminiApiKey: data.geminiApiKey || "",
+              gender: data.gender || "",
+              geminiModel: data.geminiModel || "gemini-2.5-flash",
+              qcmGoal: data.qcmGoal || "standard",
             });
           } else {
             setProfile({
               displayName: currentUser.displayName || "Utilisateur",
               photoURL: currentUser.photoURL || "",
               geminiApiKey: "",
+              gender: "",
+              geminiModel: "gemini-2.5-flash",
+              qcmGoal: "standard",
             });
           }
           setLoading(false);
@@ -58,6 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             displayName: currentUser.displayName || "Utilisateur",
             photoURL: currentUser.photoURL || "",
             geminiApiKey: "",
+            gender: "",
+            geminiModel: "gemini-2.5-flash",
+            qcmGoal: "standard",
           });
           setLoading(false);
         });
