@@ -177,6 +177,8 @@ export function MainApp() {
   );
 }
 
+
+
 function Header({ onProfileClick }: { onProfileClick: () => void }) {
   const { user, profile } = useAuth();
 
