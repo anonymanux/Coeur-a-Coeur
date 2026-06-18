@@ -1,94 +1,46 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Helpers
+    // Helper to check authentication
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Helper to check ownership
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // User Profiles
+    // User collection: anyone logged in can read (to display scores/names), only owner can write
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isOwner(userId) 
-        && (incoming().uid == request.auth.uid)
-        && (incoming().displayName is string && incoming().displayName.size() <= 50)
-        && (incoming().createdAt == request.time);
-      allow update: if isOwner(userId)
-        && (incoming().uid == existing().uid)
-        && (incoming().createdAt == existing().createdAt)
-        && (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio']));
+      allow write: if isOwner(userId);
     }
 
-    // Sessions
+    // Sessions and subcollections
     match /sessions/{sessionId} {
-      function isParticipant(sessionData) {
-        return isSignedIn() && (request.auth.uid == sessionData.creatorId || request.auth.uid == (sessionData.get('joinerId', null)));
+      allow read, write: if isSignedIn();
+
+      match /questions/{questionId} {
+        allow read, write: if isSignedIn();
       }
 
-      allow list: if isSignedIn(); 
-      allow get: if isSignedIn();
-      
-      allow create: if isSignedIn()
-        && (incoming().creatorId == request.auth.uid)
-        && (incoming().status == 'waiting')
-        && (incoming().id.matches('^[0-9]{4}$'))
-        && (incoming().createdAt == request.time);
-      
-      allow update: if isSignedIn() && (
-        // Join Action
-        (existing().status == 'waiting' && incoming().status == 'ongoing' && (incoming().joinerId == request.auth.uid || existing().creatorId == request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'joinerId', 'updatedAt'])) ||
-        // State Update (participants only)
-        (isParticipant(existing()) && incoming().diff(existing()).affectedKeys().hasAny(['currentQuestionIndex', 'status', 'updatedAt']))
-      );
+      match /answers/{answerId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
     }
 
-    // Subcollections
-    match /sessions/{sessionId}/questions/{questionId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn(); 
-    }
-
+    // Catch-all fallbacks
     match /health/{docId} {
       allow read: if isSignedIn();
     }
     
     match /test/{docId} {
-      allow read: if true;
-    }
-
-    match /sessions/{sessionId}/answers/{answerId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() 
-        && (incoming().userId == request.auth.uid)
-        && (incoming().timestamp == request.time);
-    }
-
-    match /sessions/{sessionId}/messages/{messageId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-        && (incoming().senderId == request.auth.uid)
-        && (incoming().timestamp == request.time);
+      allow read, write: if true;
     }
   }
 }

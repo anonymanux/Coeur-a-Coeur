@@ -25,13 +25,15 @@ Avant de commencer, assures-toi d'avoir installé sur ta machine :
 
 ---
 
-## Étape 1 : Installation et Initialisation de Capacitor
+## Étape 1 : Installation et Initialisation de Capacitor (Spécifique Capacitor v8)
 
-Dans le répertoire racine de ton projet web, installe les dépendances nécessaires pour Capacitor :
+Puisque ton environnement utilise la version **Capacitor CLI v8.4.0**, il est extrêmement important d'aligner l'ensemble de l'écosystème Capacitor (Core, CLI, Android, App et StatusBar) sur la version majeure **8**. Cela évite les erreurs de compilation Gradle et de liaisons de types entre votre projet React TypeScript et le runtime Android natif.
+
+Dans le répertoire racine de ton projet web, installe les dépendances requises :
 
 ```bash
-# Installer le cœur de Capacitor et la CLI
-npm install @capacitor/core @capacitor/cli
+# Installer le cœur de Capacitor et la CLI alignés sur la version 8
+npm install @capacitor/core@8 @capacitor/cli@8
 
 # Initialiser la configuration globale de Capacitor
 npx cap init "Cœur à Cœur" "com.coeuracoeur.app" --web-dir=dist
@@ -40,11 +42,11 @@ npx cap init "Cœur à Cœur" "com.coeuracoeur.app" --web-dir=dist
 *   `"com.coeuracoeur.app"`: L'identifiant de package (Package ID / Application ID) unique. **Cette valeur est essentielle pour la suite dans la console Firebase**.
 *   `--web-dir=dist`: Indique à Capacitor où se trouve le dossier d'export statique généré après le build de ton app React (`npm run build`).
 
-Installe ensuite la plateforme native Android :
+Installe ensuite la plateforme native Android, elle aussi alignée sur la version **8** :
 
 ```bash
-# Installer le module Android Capacitor
-npm install @capacitor/android
+# Installer le module Android Capacitor en version 8
+npm install @capacitor/android@8
 
 # Ajouter le dossier natif android au projet
 npx cap add android
@@ -54,7 +56,7 @@ npx cap add android
 
 ## Étape 2 : Configuration de Capacitor (`capacitor.config.ts` ou `.json`)
 
-Modifie ton fichier de configuration capacitor (probablement `capacitor.config.ts`) afin d'y ajouter les configurations d'authentification native et de définir correctement les serveurs de ressources.
+Modifie ton fichier de configuration capacitor (probablement `capacitor.config.ts`) afin d'y ajouter les configurations d'authentification native et de définir correctement les serveurs de ressources. Notez que dans Capacitor v8, l'option obsolète `bundledWebRuntime` a été complètement retirée des déclarations de types et n'est plus nécessaire.
 
 E.g. Exemple de `capacitor.config.ts` :
 
@@ -65,7 +67,6 @@ const config: CapacitorConfig = {
   appId: 'com.coeuracoeur.app',
   appName: 'Cœur à Cœur',
   webDir: 'dist',
-  bundledWebRuntime: false,
   plugins: {
     GoogleAuth: {
       // Ce Client ID Web sera fourni par la console Google Cloud de Firebase (voir Étape 4)
@@ -140,8 +141,10 @@ Google Sign-In natif utilise le flux d'identification OAuth d'un Client Web pour
 La méthode standard de Firebase Web `signInWithPopup` peut être bloquée par Android. Il est fortement recommandé d'utiliser le module officiel de la communauté Capacitor pour intercepter et gérer l'authentification native de manière fluide.
 
 ### A. Installer le Plugin Native Google Auth
+Pour garantir la compatibilité avec Capacitor v8, installez le plugin officiel de la communauté Google Auth. Selon votre version d'npm et l'état de vos peer dependencies, vous devriez utiliser le flag `--legacy-peer-deps` :
+
 ```bash
-npm install @capacitor-community/google-auth
+npm install @capacitor-community/google-auth --legacy-peer-deps
 npx cap update
 ```
 
@@ -332,9 +335,9 @@ Pour donner un aspect ultra premium, uniforme et professionnel à votre applicat
 
 ### A. Installer le Plugin StatusBar de Capacitor
 
-Pour manipuler nativement la barre de statut depuis le frontend :
+Pour manipuler nativement la barre de statut depuis le frontend sous **Capacitor v8**, installez les dépendances `@capacitor/status-bar` et `@capacitor/app` alignées sur la version majeure **8** :
 ```bash
-npm install @capacitor/status-bar
+npm install @capacitor/status-bar@8 @capacitor/app@8 --legacy-peer-deps
 npx cap update
 ```
 
