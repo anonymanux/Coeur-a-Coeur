@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="google_sign_in_options">
+        <item>@string/server_client_id</item>
+    </array>
+</resources>

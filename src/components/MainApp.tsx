@@ -15,6 +15,7 @@ import { GoogleSignIn } from "@capawesome/capacitor-google-sign-in";
 export function MainApp() {
   const { user } = useAuth();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Parse URL search params for direct join codes
   useEffect(() => {
@@ -144,7 +145,7 @@ export function MainApp() {
           ))}
         </div>
 
-        <Header />
+        <Header onProfileClick={() => setIsProfileModalOpen(true)} />
         
         <div className="flex-1 overflow-hidden relative z-10 flex flex-col bg-[#FFF5F7]/30">
           <AnimatePresence mode="wait">
@@ -169,13 +170,20 @@ export function MainApp() {
             border-radius: 9999px;
           }
         `}</style>
+        
+        <UserProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
       </div>
     </div>
   );
 }
 
-function Header() {
-  const { user } = useAuth();
+
+
+function Header({ onProfileClick }: { onProfileClick: () => void }) {
+  const { user, profile } = useAuth();
+
+  const photoURL = profile?.photoURL || user?.photoURL;
+  const displayName = profile?.displayName || user?.displayName || "Utilisateur";
 
   return (
     <header className="flex items-center justify-between bg-white/80 backdrop-blur-md px-6 py-4 shadow-sm border-b border-rose-50 shrink-0 relative z-20">
@@ -189,12 +197,16 @@ function Header() {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full border border-rose-200 p-0.5 shadow-sm shrink-0">
-          {user?.photoURL ? (
-            <img src={user.photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
+        <div 
+          onClick={onProfileClick}
+          className="w-8 h-8 rounded-full border border-rose-200 hover:border-rose-400 p-0.5 shadow-sm shrink-0 cursor-pointer active:scale-95 transition-all"
+          title="Modifier votre profil et Clé Gemini"
+        >
+          {photoURL ? (
+            <img src={photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full rounded-full object-cover" />
           ) : (
-            <div className="w-full h-full bg-rose-100 rounded-full flex items-center justify-center font-bold text-rose-600 text-xs">
-              {user?.displayName?.[0]}
+            <div className="w-full h-full bg-rose-100 rounded-full flex items-center justify-center font-bold text-rose-600 text-xs text-center uppercase">
+              {displayName?.[0] || "?"}
             </div>
           )}
         </div>
@@ -207,6 +219,258 @@ function Header() {
         </button>
       </div>
     </header>
+  );
+}
+
+function UserProfileModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { user, profile } = useAuth();
+  const [displayName, setDisplayName] = useState("");
+  const [photoURL, setPhotoURL] = useState("");
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (isOpen && user) {
+      setDisplayName(profile?.displayName || user.displayName || "");
+      setPhotoURL(profile?.photoURL || user.photoURL || "");
+      setGeminiApiKey(profile?.geminiApiKey || "");
+      setSaveStatus("idle");
+      setErrorMessage("");
+    }
+  }, [isOpen, profile, user]);
+
+  if (!isOpen || !user) return null;
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setSaveStatus("idle");
+    setErrorMessage("");
+    try {
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, {
+        displayName: displayName.trim(),
+        photoURL: photoURL.trim(),
+        geminiApiKey: geminiApiKey.trim(),
+        lastUpdatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      setSaveStatus("success");
+      setTimeout(() => {
+        onClose();
+      }, 1000);
+    } catch (err: any) {
+      console.error("Error saving profile:", err);
+      setSaveStatus("error");
+      setErrorMessage(err.message || "Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const AVATAR_PRESETS = [
+    { label: "Cupidon", url: "https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=100&auto=format&fit=crop&q=60" },
+    { label: "Cœurs", url: "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=100&auto=format&fit=crop&q=60" },
+    { label: "Cosmique", url: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=100&auto=format&fit=crop&q=60" },
+    { label: "Fleur Rose", url: "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=100&auto=format&fit=crop&q=60" },
+    { label: "Félin Mignon", url: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=100&auto=format&fit=crop&q=60" },
+    { label: "Panda", url: "https://images.unsplash.com/photo-1508921912186-1d1a45ebb3c1?w=100&auto=format&fit=crop&q=60" }
+  ];
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop overlay */}
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="absolute inset-0 bg-[#331122]/40 backdrop-blur-sm"
+        />
+
+        {/* Modal card */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          transition={{ type: "spring", duration: 0.5 }}
+          className="relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl border-4 border-rose-100 p-6 overflow-hidden z-50 flex flex-col"
+        >
+          {/* Header decor */}
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-rose-200/40 rounded-bl-full pointer-events-none" />
+          
+          <div className="flex items-center justify-between mb-5 relative z-10">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500">
+                <Settings className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
+              </div>
+              <h2 className="text-xl font-black text-rose-600 tracking-tight">Mon Profil</h2>
+            </div>
+            <button 
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full hover:bg-slate-50 flex items-center justify-center transition-colors font-bold text-lg"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleSave} className="space-y-4 relative z-10 flex-grow overflow-y-auto max-h-[70vh] pr-1 scrollbar-none">
+            {/* Display name field */}
+            <div>
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                Pseudo / Surnom de couple
+              </label>
+              <input
+                type="text"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Votre pseudo..."
+                className="w-full px-4 py-3 rounded-xl bg-rose-50/50 border border-rose-100 text-slate-800 focus:outline-none focus:border-rose-400 focus:bg-white text-sm font-bold transition-all"
+              />
+            </div>
+
+            {/* Avatar picker / Photo URL field */}
+            <div>
+              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                Photo de profil (URL)
+              </label>
+              
+              {/* Preview and Input */}
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-full border-2 border-rose-200 p-0.5 overflow-hidden shadow-sm shrink-0 bg-rose-50">
+                  {photoURL ? (
+                    <img src={photoURL} alt="Preview" className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-rose-200 flex items-center justify-center font-bold text-rose-600 text-sm">
+                      {displayName[0] || "?"}
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="url"
+                  value={photoURL}
+                  onChange={(e) => setPhotoURL(e.target.value)}
+                  placeholder="Lien d'image (https://...)"
+                  className="flex-1 px-3 py-2 border border-rose-100 rounded-lg text-xs font-medium text-slate-600 focus:outline-none focus:border-rose-300"
+                />
+              </div>
+
+              {/* Preset selection */}
+              <div className="bg-rose-50/30 p-2.5 rounded-xl border border-rose-100/55">
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-1.5">
+                  Avatars prédéfinis :
+                </span>
+                <div className="grid grid-cols-6 gap-2">
+                  {AVATAR_PRESETS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setPhotoURL(preset.url)}
+                      title={preset.label}
+                      className={`w-9 h-9 rounded-full border-2 overflow-hidden shadow-xs hover:scale-110 active:scale-95 transition-all ${
+                        photoURL === preset.url ? "border-rose-500 shadow-sm" : "border-transparent"
+                      }`}
+                    >
+                      <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Gemini API Key field */}
+            <div className="pt-2 border-t border-rose-50">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider">
+                  Votre Clé API Gemini
+                </label>
+                <span className="text-[9px] bg-emerald-50 text-emerald-600 font-extrabold px-1.5 py-0.5 rounded-full border border-emerald-100">
+                  Optionnel
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium leading-relaxed mb-2.5">
+                Utilisez votre propre clé API Gemini pour générer vos quiz et analyses à l'infini !
+              </p>
+              
+              <div className="relative">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full pl-4 pr-11 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:border-rose-400 focus:bg-white text-xs font-mono transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors"
+                >
+                  {showKey ? "Masquer" : "Afficher"}
+                </button>
+              </div>
+
+              <div className="mt-2.5 flex justify-end">
+                <a 
+                  href="https://aistudio.google.com/app/apikey" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-rose-500 font-bold hover:underline inline-flex items-center gap-1"
+                >
+                  Obtenir une clé API gratuite <ChevronRight className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Error or Success notification banner */}
+            {saveStatus === "success" && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-extrabold flex items-center gap-2 border border-emerald-100"
+              >
+                <div className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[10px]">✓</div>
+                Sauvegardé avec succès !
+              </motion.div>
+            )}
+
+            {saveStatus === "error" && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-medium border border-red-100"
+              >
+                {errorMessage}
+              </motion.div>
+            )}
+
+            {/* Submission button */}
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              disabled={isSaving}
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-400 to-rose-500 hover:from-rose-500 hover:to-rose-600 text-white font-black text-sm py-4 rounded-xl shadow-lg shadow-rose-200/80 transition-all text-center mt-4 disabled:opacity-50 cursor-pointer"
+            >
+              {isSaving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Enregistrement...
+                </>
+              ) : (
+                <>
+                  Enregistrer
+                </>
+              )}
+            </motion.button>
+          </form>
+        </motion.div>
+      </div>
+    </AnimatePresence>
   );
 }
 
@@ -364,6 +628,12 @@ function AuthScreen() {
       // Messages d'erreur plus spécifiques
       if (error.code === 'auth/popup-blocked') {
         setInitError("Veuillez autoriser les popups pour ce site");
+      } else if (error.code === 'auth/unauthorized-domain' || error.message?.includes('auth/unauthorized-domain')) {
+        const hostname = window.location.hostname;
+        setInitError(
+          `Ce domaine (${hostname}) n'est pas autorisé dans votre console Firebase. ` +
+          `Veuillez vous rendre dans Firebase Console -> Authentication -> Paramètres (Settings) -> "Domaines d'autorisation" (Authorized Domains) et ajoutez "${hostname}".`
+        );
       } else if (error.code === 'auth/network-request-failed') {
         setInitError("Problème de connexion internet. Vérifiez votre réseau.");
       } else if (error.message?.includes('Firebase')) {
@@ -496,7 +766,7 @@ const PRESET_THEMES = [
 ];
 
 function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => void }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activeTab, setActiveTab] = useState<"create" | "join">("create");
   const [joinId, setJoinId] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -539,7 +809,7 @@ function Lobby({ setActiveSessionId }: { setActiveSessionId: (id: string) => voi
     const sessionId = `session_${Date.now()}`;
     
     try {
-      const genQuestions = await generateQuizQuestions(config.topics, config.count, config.difficulty);
+      const genQuestions = await generateQuizQuestions(config.topics, config.count, config.difficulty, profile?.geminiApiKey);
       
       if (!genQuestions || genQuestions.length === 0) {
         throw new Error("L'IA n'a pas pu générer de questions. Essayez d'autres thèmes.");
@@ -1456,6 +1726,7 @@ function GameRoom({ sessionId, onLeave }: { sessionId: string, onLeave: () => vo
 }
 
 function Results({ questions, answers, onLeave, session }: { questions: QuizQuestion[], answers: any[], onLeave: () => void, session: any }) {
+  const { profile } = useAuth();
   const [result, setResult] = useState<{ score: number, analysis: string } | null>(null);
 
   useEffect(() => {
@@ -1468,7 +1739,7 @@ function Results({ questions, answers, onLeave, session }: { questions: QuizQues
       
       const u1Answers = answers.filter(a => a.userId === session.creatorId).sort((a, b) => a.questionIndex - b.questionIndex).map(a => a.answerIndex);
       const u2Answers = answers.filter(a => a.userId === session.joinerId).sort((a, b) => a.questionIndex - b.questionIndex).map(a => a.answerIndex);
-      const res = await evaluateCompatibility(u1Answers, u2Answers, questions);
+      const res = await evaluateCompatibility(u1Answers, u2Answers, questions, profile?.geminiApiKey);
       setResult(res);
     };
     calc();
