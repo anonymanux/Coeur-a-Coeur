@@ -1,19 +1,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { logToErrorFile } from "../lib/logger";
 
-const DEFAULT_API_KEY = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+const API_KEY = process.env.GEMINI_API_KEY;
 
-if (!DEFAULT_API_KEY) {
+if (!API_KEY) {
   logToErrorFile("GEMINI_API_KEY is missing", "CONFIG_CHECK");
 }
 
-function getAIClient(customApiKey?: string) {
-  const apiKey = customApiKey?.trim() || DEFAULT_API_KEY;
-  if (!apiKey) {
-    throw new Error("Aucune clé API Gemini n'a été configurée. Veuillez ajouter votre propre clé API Gemini dans votre profil.");
-  }
-  return new GoogleGenAI({ apiKey });
-}
+const ai = new GoogleGenAI({ apiKey: API_KEY as string });
 
 export interface QuizQuestion {
   text: string;
@@ -25,8 +19,7 @@ export interface QuizQuestion {
 export async function generateQuizQuestions(
   topic: string,
   count: number,
-  difficulty: string,
-  customApiKey?: string
+  difficulty: string
 ): Promise<QuizQuestion[]> {
   const prompt = `Générer un quiz de compatibilité amoureuse sur le thème "${topic}". 
   Nombre de questions: ${count}. 
@@ -34,7 +27,6 @@ export async function generateQuizQuestions(
   Les questions doivent être amusantes et révélatrices sur les préférences ou la personnalité des partenaires.`;
 
   try {
-    const ai = getAIClient(customApiKey);
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -60,18 +52,17 @@ export async function generateQuizQuestions(
     });
 
     return JSON.parse(response.text || "[]");
-  } catch (e: any) {
+  } catch (e) {
     logToErrorFile(e, "GEMINI_GENERATE_QUIZ");
     console.error("Failed to generate or parse Gemini response", e);
-    throw new Error(e.message || "Impossible d'interroger Gemini. Veuillez vérifier votre clé API.");
+    return [];
   }
 }
 
 export async function evaluateCompatibility(
   answers1: number[],
   answers2: number[],
-  questions: QuizQuestion[],
-  customApiKey?: string
+  questions: QuizQuestion[]
 ): Promise<{ score: number; analysis: string }> {
   const matches = answers1.filter((a, i) => a === answers2[i]).length;
   const score = Math.round((matches / questions.length) * 100);
@@ -82,7 +73,6 @@ export async function evaluateCompatibility(
   Fais une analyse brève et ludique en français de leur relation.`;
 
   try {
-    const ai = getAIClient(customApiKey);
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -92,11 +82,11 @@ export async function evaluateCompatibility(
       score,
       analysis: response.text || "Analyse indisponible."
     };
-  } catch (e: any) {
+  } catch (e) {
     logToErrorFile(e, "GEMINI_EVALUATE");
     return {
       score,
-      analysis: `Impossible de générer l'analyse : ${e.message || "Vérifiez votre clé API Gemini dans votre profil."}`
+      analysis: "Impossible de générer l'analyse pour le moment."
     };
   }
 }
