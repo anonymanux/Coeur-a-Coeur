@@ -850,7 +850,7 @@ function AuthScreen() {
       {/* Pinned Version Footer */}
       <div className="absolute bottom-4 left-0 right-0 text-center pointer-events-none select-none z-10">
         <span className="text-xs font-bold text-rose-300 font-mono tracking-wider opacity-60">
-          v1.0.1
+          v1.0.2
         </span>
       </div>
     </div>
